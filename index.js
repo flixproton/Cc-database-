@@ -1,34 +1,36 @@
 const express = require('express');
-const cors = require('cors');
 const fs = require('fs');
+const { parser } = require('stream-json');
+const { streamArray } = require('stream-json/streamers/StreamArray');
+
 const app = express();
 const PORT = process.env.PORT || 3000;
 
-app.use(cors());
+app.get('/api', (req, res) => {
+  const number = parseInt(req.query.number);
+  if (!number) return res.status(400).json({ error: 'Please provide a valid number' });
 
-// Load your database into memory (very fast for 1000 - 100k records)
-const data = JSON.parse(fs.readFileSync('./database.json', 'utf8'));
+  const fileStream = fs.createReadStream('data.json');
+  const jsonStream = fileStream.pipe(parser()).pipe(streamArray());
 
-app.get('/api/search', (req, res) => {
-    const mobileQuery = req.query.mobile;
+  let found = false;
 
-    if (!mobileQuery) {
-        return res.status(400).json({ success: false, message: "Mobile number is required" });
+  jsonStream.on('data', ({ value }) => {
+    if (value.number === number) {
+      found = true;
+      res.json(value);
+      fileStream.destroy(); // stop reading further
     }
+  });
 
-    // Filter data for matching mobile numbers
-    const results = data.filter(item => String(item.mobile) === String(mobileQuery));
+  jsonStream.on('end', () => {
+    if (!found) res.status(404).json({ error: 'Number not found' });
+  });
 
-    // Return the exact format you requested
-    res.json({
-        "success": true,
-        "API BY": "@yash_code_ai",
-        "owner": "@flix_num_to_info",
-        "query_mobile": mobileQuery,
-        "result": results
-    });
+  jsonStream.on('error', err => {
+    console.error(err);
+    res.status(500).json({ error: 'Error reading JSON file' });
+  });
 });
 
-app.listen(PORT, () => {
-    console.log(`Server running on port ${PORT}`);
-});
+app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
